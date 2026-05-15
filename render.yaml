@@ -10,3 +10,13 @@ services:
         value: production
       - key: DATABASE_URL
         sync: false
+
+  - type: web
+    name: sharp-frontend
+    runtime: static
+    rootDir: sharp-frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://sharp-backend-4pau.onrender.com
