@@ -1,27 +1,22 @@
 const axios = require('axios');
 const { query } = require('../db/pool');
 
-const client = axios.create({
-  baseURL: process.env.API_SPORTS_BASE_URL,
-  headers: {
-    'x-apisports-key': process.env.API_SPORTS_KEY,
-  },
+const espn = axios.create({
+  baseURL: 'https://site.api.espn.com/apis/site/v2/sports/mma/ufc',
 });
 
 // ── Sync upcoming events into DB ─────────────────────────────────
 async function syncUpcomingEvents() {
   try {
-    console.log('[apiSports] Fetching upcoming MMA events...');
-    const { data } = await client.get('/events', {
-      params: { next: 10 },
-    });
+    console.log('[ESPN] Fetching upcoming UFC events...');
+    const { data } = await espn.get('/scoreboard');
 
-    if (!data.response?.length) {
-      console.log('[apiSports] No upcoming events found');
+    if (!data.events?.length) {
+      console.log('[ESPN] No upcoming events found');
       return;
     }
 
-    for (const event of data.response) {
+    for (const event of data.events) {
       // Upsert event
       const eventResult = await query(`
         INSERT INTO events (api_sports_id, name, date, status)
@@ -38,47 +33,60 @@ async function syncUpcomingEvents() {
 
       const eventId = eventResult.rows[0].id;
 
-      // Upsert fights for this event
-      if (event.fights?.length) {
-        for (const fight of event.fights) {
+      // Upsert fights from competitions
+      if (event.competitions?.length) {
+        for (const fight of event.competitions) {
+          const fighter1 = fight.competitors?.find(c => c.order === 1);
+          const fighter2 = fight.competitors?.find(c => c.order === 2);
+
+          if (!fighter1 || !fighter2) continue;
+
+          const fighter1Name = fighter1.athlete?.fullName || 'TBA';
+          const fighter2Name = fighter2.athlete?.fullName || 'TBA';
+          const fighter1Record = fighter1.records?.[0]?.summary || null;
+          const fighter2Record = fighter2.records?.[0]?.summary || null;
+          const weightClass = fight.type?.abbreviation || null;
+          const cardPosition = fight.format?.regulation?.periods === 5 ? 'Main Event' : 'Prelims';
+
           await query(`
             INSERT INTO fights (
               api_sports_id, event_id,
-              fighter1_name, fighter1_odds,
-              fighter2_name, fighter2_odds,
+              fighter1_name, fighter1_record,
+              fighter2_name, fighter2_record,
               weight_class, card_position, status
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'scheduled')
             ON CONFLICT (api_sports_id) DO UPDATE
-              SET fighter1_odds = EXCLUDED.fighter1_odds,
-                  fighter2_odds = EXCLUDED.fighter2_odds,
+              SET fighter1_name = EXCLUDED.fighter1_name,
+                  fighter2_name = EXCLUDED.fighter2_name,
+                  fighter1_record = EXCLUDED.fighter1_record,
+                  fighter2_record = EXCLUDED.fighter2_record,
                   status = EXCLUDED.status
           `, [
             fight.id,
             eventId,
-            fight.fighters?.home?.name || 'TBA',
-            fight.fighters?.home?.odds || null,
-            fight.fighters?.away?.name || 'TBA',
-            fight.fighters?.away?.odds || null,
-            fight.weight_class || null,
-            fight.position || 'Prelims',
+            fighter1Name,
+            fighter1Record,
+            fighter2Name,
+            fighter2Record,
+            weightClass,
+            cardPosition,
           ]);
         }
       }
     }
 
-    console.log('[apiSports] Upcoming events synced');
+    console.log('[ESPN] Upcoming events synced');
   } catch (err) {
-    console.error('[apiSports] syncUpcomingEvents error:', err.message);
+    console.error('[ESPN] syncUpcomingEvents error:', err.message);
   }
 }
 
 // ── Sync results and resolve picks ───────────────────────────────
 async function syncResultsAndResolvePicks() {
   try {
-    console.log('[apiSports] Checking fight results...');
+    console.log('[ESPN] Checking fight results...');
 
-    // Get fights that are still scheduled but event date has passed
     const pendingFights = await query(`
       SELECT f.id, f.api_sports_id
       FROM fights f
@@ -89,27 +97,34 @@ async function syncResultsAndResolvePicks() {
     `);
 
     if (!pendingFights.rows.length) {
-      console.log('[apiSports] No pending fights to resolve');
+      console.log('[ESPN] No pending fights to resolve');
       return;
     }
 
+    // Fetch latest scoreboard to check results
+    const { data } = await espn.get('/scoreboard');
+
     for (const fight of pendingFights.rows) {
-      const { data } = await client.get(`/fights/${fight.api_sports_id}`);
-      const result = data.response?.[0];
+      // Find this fight in ESPN competitions
+      let result = null;
+      for (const event of data.events || []) {
+        const comp = event.competitions?.find(c => c.id === fight.api_sports_id);
+        if (comp) { result = comp; break; }
+      }
 
-      if (!result || result.status !== 'finished') continue;
+      if (!result || !result.status?.type?.completed) continue;
 
-      const winner = result.winner?.name || null;
-      const method = result.method || null;
+      const winnerComp = result.competitors?.find(c => c.winner === true);
+      const winner = winnerComp?.athlete?.fullName || null;
 
       // Update fight result
       await query(`
         UPDATE fights
-        SET status = 'completed', winner = $1, method = $2, updated_at = NOW()
-        WHERE id = $3
-      `, [winner, method, fight.id]);
+        SET status = 'completed', winner = $1, updated_at = NOW()
+        WHERE id = $2
+      `, [winner, fight.id]);
 
-      // Resolve picks for this fight
+      // Resolve picks
       const picks = await query(`
         SELECT id, user_id, fighter_name
         FROM picks
@@ -148,12 +163,12 @@ async function syncResultsAndResolvePicks() {
         }
       }
 
-      console.log(`[apiSports] Resolved fight ${fight.api_sports_id} — winner: ${winner}`);
+      console.log(`[ESPN] Resolved fight ${fight.api_sports_id} — winner: ${winner}`);
     }
 
-    console.log('[apiSports] Results sync complete');
+    console.log('[ESPN] Results sync complete');
   } catch (err) {
-    console.error('[apiSports] syncResultsAndResolvePicks error:', err.message);
+    console.error('[ESPN] syncResultsAndResolvePicks error:', err.message);
   }
 }
 
