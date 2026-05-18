@@ -1,6 +1,5 @@
 const cron = require('node-cron');
 const { syncUpcomingEvents, syncResultsAndResolvePicks } = require('./apiSports');
-console.log('[Cron] apiSports exports:', Object.keys(apiSports));
 
 function startCronJobs() {
   console.log('[Cron] Starting scheduled jobs...');
