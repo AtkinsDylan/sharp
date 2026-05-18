@@ -60,6 +60,7 @@ app.use('/api/fights', fightRoutes);
 app.use('/api/picks', pickRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
+app.use('/api/admin', adminRoutes);
 
 // ── 404 ───────────────────────────────────────────────────────────
 app.use((req, res) => res.status(404).json({ error: 'Route not found' }));
@@ -68,8 +69,6 @@ app.use((req, res) => res.status(404).json({ error: 'Route not found' }));
 app.use(errorHandler);
 
 
-//Admin Coode
-app.use('/api/admin', adminRoutes);
 
 // ── Start ─────────────────────────────────────────────────────────
 app.listen(PORT, () => {
