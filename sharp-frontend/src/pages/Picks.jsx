@@ -10,24 +10,9 @@ const PICK_TYPES = [
   { id: 'r3', label: 'R3+ Finish' },
 ];
 
-
-
-function fmtOdds(o) {
-  return o > 0 ? `+${o}` : `${o}`;
-}
-
-function getPointsPreview(odds, pickType) {
-  const mods = { ml:1.0, ko:1.4, dec:0.7, r1:2.5, r2:2.0, r3:1.8 };
-  const mod = mods[pickType] || 1.0;
-  let base;
-  if (odds <= -300) base = 10;
-  else if (odds <= -200) base = 15;
-  else if (odds <= -100) base = 20;
-  else if (odds <= 150) base = 30;
-  else if (odds <= 250) base = 45;
-  else if (odds <= 400) base = 60;
-  else base = 80;
-  return Math.round(base * mod);
+function getPointsPreview(pickType) {
+  const points = { ml: 10, ko: 20, dec: 8, r1: 40, r2: 30, r3: 25 };
+  return points[pickType] || 10;
 }
 
 export default function Picks() {
@@ -136,9 +121,8 @@ export default function Picks() {
                       onClick={() => !picked && handlePick(fight, 'fighter1')}
                       disabled={!!picked || submitting === `${fight.id}-fighter1`}
                     >
-                      {fmtOdds(fight.fighter1_odds)}
                       <span style={styles.ptsBadge}>
-                        +{getPointsPreview(fight.fighter1_odds, pickType)} pts
+                        +{getPointsPreview(pickType)} pts
                       </span>
                     </button>
                   </div>
@@ -162,9 +146,8 @@ export default function Picks() {
                       onClick={() => !picked && handlePick(fight, 'fighter2')}
                       disabled={!!picked || submitting === `${fight.id}-fighter2`}
                     >
-                      {fmtOdds(fight.fighter2_odds)}
                       <span style={styles.ptsBadge}>
-                        +{getPointsPreview(fight.fighter2_odds, pickType)} pts
+                        +{getPointsPreview(pickType)} pts
                       </span>
                     </button>
                   </div>
