@@ -35,7 +35,10 @@ async function syncUpcomingEvents() {
 
       // Upsert fights from competitions
       if (event.competitions?.length) {
-        for (const fight of event.competitions) {
+        const total = event.competitions.length;
+
+        for (let i = 0; i < event.competitions.length; i++) {
+          const fight = event.competitions[i];
           const fighter1 = fight.competitors?.find(c => c.order === 1);
           const fighter2 = fight.competitors?.find(c => c.order === 2);
 
@@ -46,7 +49,13 @@ async function syncUpcomingEvents() {
           const fighter1Record = fighter1.records?.[0]?.summary || null;
           const fighter2Record = fighter2.records?.[0]?.summary || null;
           const weightClass = fight.type?.abbreviation || null;
-          const cardPosition = fight.format?.regulation?.periods === 5 ? 'Main Event' : 'Prelims';
+
+          // Determine card position by index
+          let cardPosition;
+          if (i === total - 1) cardPosition = 'Main Event';
+          else if (i === total - 2) cardPosition = 'Co-Main';
+          else if (i >= total - 7) cardPosition = 'Main Card';
+          else cardPosition = 'Prelims';
 
           await query(`
             INSERT INTO fights (
@@ -61,6 +70,7 @@ async function syncUpcomingEvents() {
                   fighter2_name = EXCLUDED.fighter2_name,
                   fighter1_record = EXCLUDED.fighter1_record,
                   fighter2_record = EXCLUDED.fighter2_record,
+                  card_position = EXCLUDED.card_position,
                   status = EXCLUDED.status
           `, [
             fight.id,
