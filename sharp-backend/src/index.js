@@ -16,6 +16,9 @@ const adminRoutes = require('./routes/admin');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ── Trust Render's single reverse proxy hop for correct req.ip ────
+app.set('trust proxy', 1);
+
 // ── Security headers ─────────────────────────────────────────────
 app.use(helmet());
 

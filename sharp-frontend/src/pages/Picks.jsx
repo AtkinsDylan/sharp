@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getEvents, getEvent, submitPick } from '../services/api';
+import FighterAvatar from '../components/FighterAvatar';
 
 const PICK_TYPES = [
   { id: 'ml', label: 'Moneyline' },
@@ -110,6 +111,7 @@ export default function Picks() {
                 <div key={fight.id} style={styles.fightRow}>
                   {/* Fighter 1 */}
                   <div style={styles.fighterBlock}>
+                    <FighterAvatar name={fight.fighter1_name} imageUrl={fight.fighter1_image} />
                     <div style={styles.fighterName}>{fight.fighter1_name}</div>
                     <div style={styles.fighterRecord}>{fight.fighter1_record}</div>
                     <button
@@ -135,6 +137,7 @@ export default function Picks() {
 
                   {/* Fighter 2 */}
                   <div style={{ ...styles.fighterBlock, alignItems: 'flex-end' }}>
+                    <FighterAvatar name={fight.fighter2_name} imageUrl={fight.fighter2_image} />
                     <div style={styles.fighterName}>{fight.fighter2_name}</div>
                     <div style={styles.fighterRecord}>{fight.fighter2_record}</div>
                     <button

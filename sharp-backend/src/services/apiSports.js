@@ -5,11 +5,34 @@ const espn = axios.create({
   baseURL: 'https://site.api.espn.com/apis/site/v2/sports/mma/ufc',
 });
 
+const SYNC_WINDOW_DAYS = 60;
+
+// ── Build an ESPN "YYYYMMDD-YYYYMMDD" range covering the next N days ──
+function upcomingDateRange(days = SYNC_WINDOW_DAYS) {
+  const fmt = (d) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const start = new Date();
+  const end = new Date();
+  end.setDate(end.getDate() + days);
+  return `${fmt(start)}-${fmt(end)}`;
+}
+
+// ── Fighter headshot: prefer an inline ESPN URL, else build one ──
+function fighterImageUrl(competitor) {
+  const inline = competitor?.athlete?.headshot?.href;
+  if (inline) return inline;
+  const athleteId = competitor?.id;
+  return athleteId
+    ? `https://a.espncdn.com/i/headshots/mma/players/full/${athleteId}.png`
+    : null;
+}
+
 // ── Sync upcoming events into DB ─────────────────────────────────
 async function syncUpcomingEvents() {
   try {
     console.log('[ESPN] Fetching upcoming UFC events...');
-    const { data } = await espn.get('/scoreboard');
+    const { data } = await espn.get('/scoreboard', {
+      params: { dates: upcomingDateRange() },
+    });
 
     if (!data.events?.length) {
       console.log('[ESPN] No upcoming events found');
@@ -49,6 +72,10 @@ async function syncUpcomingEvents() {
           const fighter1Record = fighter1.records?.[0]?.summary || null;
           const fighter2Record = fighter2.records?.[0]?.summary || null;
           const weightClass = fight.type?.abbreviation || null;
+          const fighter1EspnId = fighter1.id || null;
+          const fighter2EspnId = fighter2.id || null;
+          const fighter1Image = fighterImageUrl(fighter1);
+          const fighter2Image = fighterImageUrl(fighter2);
 
           // Determine card position by index
           let cardPosition;
@@ -60,16 +87,20 @@ async function syncUpcomingEvents() {
           await query(`
             INSERT INTO fights (
               api_sports_id, event_id,
-              fighter1_name, fighter1_record,
-              fighter2_name, fighter2_record,
+              fighter1_name, fighter1_record, fighter1_espn_id, fighter1_image,
+              fighter2_name, fighter2_record, fighter2_espn_id, fighter2_image,
               weight_class, card_position, status
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'scheduled')
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'scheduled')
             ON CONFLICT (api_sports_id) DO UPDATE
               SET fighter1_name = EXCLUDED.fighter1_name,
                   fighter2_name = EXCLUDED.fighter2_name,
                   fighter1_record = EXCLUDED.fighter1_record,
                   fighter2_record = EXCLUDED.fighter2_record,
+                  fighter1_espn_id = EXCLUDED.fighter1_espn_id,
+                  fighter2_espn_id = EXCLUDED.fighter2_espn_id,
+                  fighter1_image = EXCLUDED.fighter1_image,
+                  fighter2_image = EXCLUDED.fighter2_image,
                   card_position = EXCLUDED.card_position,
                   status = EXCLUDED.status
           `, [
@@ -77,8 +108,12 @@ async function syncUpcomingEvents() {
             eventId,
             fighter1Name,
             fighter1Record,
+            fighter1EspnId,
+            fighter1Image,
             fighter2Name,
             fighter2Record,
+            fighter2EspnId,
+            fighter2Image,
             weightClass,
             cardPosition,
           ]);
