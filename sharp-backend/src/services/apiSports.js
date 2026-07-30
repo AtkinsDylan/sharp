@@ -133,7 +133,7 @@ async function syncResultsAndResolvePicks() {
     console.log('[ESPN] Checking fight results...');
 
     const pendingFights = await query(`
-      SELECT f.id, f.api_sports_id
+      SELECT f.id, f.api_sports_id, e.id AS event_id, e.date
       FROM fights f
       JOIN events e ON e.id = f.event_id
       WHERE f.status = 'scheduled'
@@ -146,14 +146,32 @@ async function syncResultsAndResolvePicks() {
       return;
     }
 
-    // Fetch latest scoreboard to check results
-    const { data } = await espn.get('/scoreboard');
+    // Fights with no ESPN id (e.g. manually seeded) can never be matched
+    const resolvable = pendingFights.rows.filter((f) => f.api_sports_id != null);
+    if (!resolvable.length) {
+      console.log(`[ESPN] ${pendingFights.rows.length} pending fight(s) have no api_sports_id — cannot auto-resolve`);
+      return;
+    }
 
-    for (const fight of pendingFights.rows) {
+    // Fetch the scoreboard for the actual date range these fights' events fall in
+    // (a bare /scoreboard call defaults to only "today"'s event and would never
+    // find results for anything in the past)
+    const fmt = (d) => d.toISOString().slice(0, 10).replace(/-/g, '');
+    const eventDates = resolvable.map((f) => new Date(f.date));
+    const rangeStart = new Date(Math.min(...eventDates));
+    const rangeEnd = new Date(Math.max(...eventDates));
+    rangeStart.setDate(rangeStart.getDate() - 1);
+    rangeEnd.setDate(rangeEnd.getDate() + 1);
+    const dateRange = `${fmt(rangeStart)}-${fmt(rangeEnd)}`;
+
+    console.log(`[ESPN] Fetching scoreboard for ${dateRange}...`);
+    const { data } = await espn.get('/scoreboard', { params: { dates: dateRange } });
+
+    for (const fight of resolvable) {
       // Find this fight in ESPN competitions
       let result = null;
       for (const event of data.events || []) {
-        const comp = event.competitions?.find(c => c.id === fight.api_sports_id);
+        const comp = event.competitions?.find(c => String(c.id) === String(fight.api_sports_id));
         if (comp) { result = comp; break; }
       }
 
@@ -168,6 +186,17 @@ async function syncResultsAndResolvePicks() {
         SET status = 'completed', winner = $1, updated_at = NOW()
         WHERE id = $2
       `, [winner, fight.id]);
+
+      // Once every fight on the card is resolved, mark the event completed too
+      await query(`
+        UPDATE events
+        SET status = 'completed'
+        WHERE id = $1
+          AND NOT EXISTS (
+            SELECT 1 FROM fights
+            WHERE event_id = $1 AND status != 'completed'
+          )
+      `, [fight.event_id]);
 
       // Resolve picks
       const picks = await query(`

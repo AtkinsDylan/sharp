@@ -9,6 +9,7 @@
   "db:migrate": "node src/db/migrate.js",
   "db:seed": "node src/db/seed.js",
   "sync": "node src/scripts/sync.js",
+  "resolve": "node src/scripts/resolve.js",
   "backfill:photos": "node src/scripts/backfillFighterPhotos.js"
 },
   "keywords": [],

@@ -48,11 +48,14 @@ router.post('/', requireAuth, validate(pickSchema), async (req, res, next) => {
     const { fight_id, fighter_selection, pick_type } = req.body;
     const userId = req.user.id;
 
-    // 1. Check fight exists and is still scheduled
-    const fightResult = await client.query(
-      'SELECT * FROM fights WHERE id = $1 AND status = $2',
-      [fight_id, 'scheduled']
-    );
+    // 1. Check fight exists, is still scheduled, and its event hasn't started —
+    //    status alone isn't enough since it only flips once resolution has
+    //    actually run for that fight, which isn't guaranteed at pick time.
+    const fightResult = await client.query(`
+      SELECT f.* FROM fights f
+      JOIN events e ON e.id = f.event_id
+      WHERE f.id = $1 AND f.status = $2 AND e.date > NOW()
+    `, [fight_id, 'scheduled']);
     if (!fightResult.rows.length) {
       throw createError('Fight not found or no longer accepting picks', 404);
     }
